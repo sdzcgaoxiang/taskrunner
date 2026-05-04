@@ -1,0 +1,67 @@
+# ─── 全局默认值（可被任务级、步骤级覆盖）───
+defaults:
+  timeout: 300        # 默认超时（秒）
+  retry: 0            # 默认任务级重试次数
+  retry_delay: 60     # 重试间隔（秒）
+  shell: bash         # 默认 shell（bash / powershell）
+
+# ─── 任务定义 ───
+tasks:
+
+  # 例1: 基础多步骤任务，带参数和步骤级重试
+  daily_report:
+    description: "每日数据报告"
+    timeout: 600
+    retry: 1            # 任务级重试1次（整体重跑）
+    retry_delay: 30
+
+    params:
+      - name: date
+        default: "today"
+
+    steps:
+      - name: prepare
+        command: "echo 准备数据 --date={{date}}"
+        timeout: 60
+
+      - name: process
+        command: "echo 处理完成"
+        timeout: 300
+        retry: 2              # 步骤级重试（独立于任务级重试）
+        retry_delay: 10
+
+      - name: verify
+        command: "echo 检查通过 OK"
+        success_conditions:
+          # 多规则 OR 关系，规则内部 AND 关系
+          - exit_code: 0                            # 规则1: exit_code=0
+          - exit_code: 1                            # 规则2: exit_code=1 且输出包含 OK
+            output_contains: "OK"
+
+  # 例2: 自定义成功条件（不检查退出码，只检查输出）
+  data_sync:
+    description: "数据同步（检查输出判断成功）"
+    steps:
+      - name: sync
+        command: "echo SYNC COMPLETE"
+        success_conditions:
+          - exit_code: 0
+            output_contains: "SYNC COMPLETE"
+          - output_contains: "ALREADY UP TO DATE"
+
+      - name: check
+        command: "echo all good"
+        success_conditions:
+          # 只要不包含 ERROR 就算成功（不检查退出码）
+          - output_not_contains: "ERROR"
+
+  # 例3: 模拟失败 + 重试
+  retry_demo:
+    description: "演示步骤重试（第3次才成功）"
+    steps:
+      - name: flaky_step
+        command: "bash -c 'FILE=/tmp/taskrunner_attempt; if [ ! -f $FILE ]; then echo 1 > $FILE; echo FAIL; exit 1; elif [ $(cat $FILE) -lt 3 ]; then echo $(($(cat $FILE)+1)) > $FILE; echo FAIL; exit 1; else rm $FILE; echo SUCCESS; exit 0; fi'"
+        retry: 3
+        retry_delay: 2
+        success_conditions:
+          - output_contains: "SUCCESS"
